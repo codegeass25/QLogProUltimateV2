@@ -1923,8 +1923,9 @@ async function _faceRecognitionTick(){
     var overlay  = document.getElementById('faceOverlay');
     if (!video || !nameField || !video.videoWidth) return;
 
-    // Never overwrite user-typed input
+    // Never overwrite user-typed input (the last recognized name may be replaced by a new match)
     if (nameField.value && nameField.value !== _lastFaceMatchName && nameField.value !== 'Unknown Visitor') return;
+
 
     var det;
     try{
@@ -1946,12 +1947,16 @@ async function _faceRecognitionTick(){
     }
 
     if (!det){
+        // Face left the frame: keep the last recognized name in the textbox.
         _stableMatchCounter = 0;
-        if (nameField.value === _lastFaceMatchName) nameField.value = '';
-        _lastFaceMatchName = null;
-        _setFaceHud('detecting', 'Searching for a face…', 20);
+        if (_lastFaceMatchName){
+            _setFaceHud('matched', '✓ ' + _lastFaceMatchName + ' (held)', 100);
+        } else {
+            _setFaceHud('detecting', 'Searching for a face…', 20);
+        }
         return;
     }
+
 
     if (!faceDescriptorCache.length){
         _setFaceHud('detecting', 'Face detected — no registered visitors yet.', 60);
@@ -1979,10 +1984,11 @@ async function _faceRecognitionTick(){
             toast('🤖 Face matched: ' + best.name + ' (' + (confidence*100).toFixed(1) + '%)', 'green');
         }
     } else {
+        // Unrecognized face: keep the last successfully recognized name.
         _stableMatchCounter = 0;
-        if (nameField.value === _lastFaceMatchName) nameField.value = '';
-        _lastFaceMatchName = null;
-        _setFaceHud('detecting', 'Unknown visitor — enter name manually', Math.max(10, confidence*60));
+        if (!_lastFaceMatchName){
+            _setFaceHud('detecting', 'Unknown visitor — enter name manually', Math.max(10, confidence*60));
+        }
     }
 }
 
