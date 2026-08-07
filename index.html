@@ -808,7 +808,7 @@ button:disabled{ opacity:.55; cursor:not-allowed; box-shadow:none; }
         <div id="cameraArea">
             <p style="font-size:14px; color:#64748b; margin-top:0;">Position QR Code inside the green frame</p>
             <div class="video-wrapper">
-                <video id="liveCamera" autoplay playsinline></video>
+                <video id="liveCamera" autoplay playsinline style="transform: scaleX(-1);"></video>
                 <div class="scan-overlay"></div>
             </div>
             <canvas id="cameraCanvas" style="display:none;"></canvas>
@@ -952,7 +952,7 @@ button:disabled{ opacity:.55; cursor:not-allowed; box-shadow:none; }
         <div id="borrowCameraArea" style="display: none; margin-top: 15px; text-align: center; border-top: 1px solid #e2e8f0; padding-top: 15px;">
             <p style="font-size:14px; color:#64748b; margin-top:0;">Position QR Code inside the green frame</p>
             <div class="video-wrapper">
-                <video id="borrowLiveCamera" autoplay playsinline></video>
+                <video id="borrowLiveCamera" autoplay playsinline style="transform: scaleX(-1);"></video>
                 <div class="scan-overlay"></div>
             </div>
             <canvas id="borrowCameraCanvas" style="display:none;"></canvas>
@@ -1658,12 +1658,11 @@ function scanCameraFrame() {
         canvas.height = video.videoHeight; canvas.width = video.videoWidth;
         var ctx = canvas.getContext('2d');
         scanAttemptCounter++;
-        if (scanAttemptCounter % 2 === 0) { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); } 
-        else {
-            ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height); 
-            ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        }
+        /* Consistent NON-MIRRORED orientation on every frame (matches preview) */
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         if(typeof jsQR !== 'undefined') {
             var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
@@ -1777,12 +1776,11 @@ function scanBorrowCameraFrame() {
         canvas.height = video.videoHeight; canvas.width = video.videoWidth;
         var ctx = canvas.getContext('2d');
         scanAttemptCounter++;
-        if (scanAttemptCounter % 2 === 0) { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); } 
-        else {
-            ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height); 
-            ctx.setTransform(1, 0, 0, 1, 0, 0); 
-        }
+        /* Consistent NON-MIRRORED orientation on every frame (matches preview) */
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         if(typeof jsQR !== 'undefined') {
             var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
