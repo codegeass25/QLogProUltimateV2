@@ -2198,7 +2198,8 @@ function processScan(code){
             scanMsg.innerHTML = '🔴 ' + openVisitor.name + ' TIMED OUT'; scanMsg.style.color = '#dc2626';
             return;
         }
-        markDup(code, Date.now());
+        // NEW/UNKNOWN visitor QR: do NOT start the 30s dedup timer here.
+        // The dedup window starts only after saveVisitor() persists the TIME-IN.
         pendingVisitorQR = code; showVisitorTab(); showTab('visitors', document.querySelector('#visitorTabBtn'));
         startVisitorCamera(); setTimeout(function(){ document.getElementById('visitorName').focus(); }, 100);
         toast('Unknown QR - Register Visitor','red'); return;
