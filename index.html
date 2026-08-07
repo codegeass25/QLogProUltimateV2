@@ -2076,10 +2076,37 @@ function showTab(id, btn){
     if(id === 'reservationsTab') { renderReservations(); }
 }
 
-function toast(m, c){
+var _toastTimer = null, _toastHideTimer = null;
+function _getToastEl(){
     var t = document.getElementById('toast');
-    t.className = 'toast ' + c; t.innerHTML = m; t.style.display = 'block';
-    setTimeout(function(){ t.style.display='none'; }, 2500);
+    if(!t){
+        t = document.createElement('div');
+        t.id = 'toast'; t.className = 'toast';
+        document.body.appendChild(t);
+    }
+    // Ensure it is always the last child so it paints above modals/video
+    if(t.parentNode !== document.body || document.body.lastElementChild !== t){
+        document.body.appendChild(t);
+    }
+    return t;
+}
+function toast(m, c, duration){
+    var t = _getToastEl();
+    if(_toastTimer){ clearTimeout(_toastTimer); _toastTimer = null; }
+    if(_toastHideTimer){ clearTimeout(_toastHideTimer); _toastHideTimer = null; }
+    t.className = 'toast ' + (c || 'blue');
+    t.innerHTML = m;
+    t.style.display = 'block';
+    t.style.visibility = 'visible';
+    t.style.zIndex = '2147483647';
+    // force reflow so the transition replays for consecutive toasts
+    void t.offsetWidth;
+    t.classList.add('show');
+    var ms = duration || 3000;
+    _toastTimer = setTimeout(function(){
+        t.classList.remove('show');
+        _toastHideTimer = setTimeout(function(){ t.style.display = 'none'; }, 300);
+    }, ms);
 }
 function showVisitorTab(){ document.getElementById('visitorTabBtn').style.display='inline-block'; }
 function hideVisitorTab(){ document.getElementById('visitorTabBtn').style.display='none'; }
@@ -2220,31 +2247,80 @@ if(borrowScannerInput) {
     });
 }
 
-function saveVisitor(){
-    var name = document.getElementById('visitorName').value.trim();
-    var reason=document.getElementById('visitorReason').value.trim(); if(reason==='Others') reason=document.getElementById('visitorReasonOther').value.trim();
-    if(!name || !reason){ alert('Fill all information'); return; }
-    
-    var c = document.getElementById('visitorCanvas'); var vc = document.getElementById('visitorCamera'); var vp = document.getElementById('visitorPhoto');
-    c.width = 320; c.height = 240; c.getContext('2d').drawImage(vc, 0, 0, c.width, c.height);
-    vp.value = c.toDataURL('image/jpeg', 0.6); 
-
-    var vid = pendingVisitorQR || ('VIS-' + Date.now());
-    if(isDupBlocked(vid)){ dupBlockToast(); return; }
-    var vTimeIn = new Date().toLocaleTimeString();
-    var rec = { id: vid, name: name, category: 'VISITOR', gs: '', reason: reason, timein: vTimeIn, timeout: '', date: new Date().toLocaleDateString(), face: vp.value };
-    logs.push(rec); visitorTempLogs[vid] = rec;
-
-    document.getElementById('visitorName').value = ''; document.getElementById('visitorReason').value='';document.getElementById('visitorReasonOther').value='';document.getElementById('visitorReasonOther').style.display='none';
-    pendingVisitorQR = '';
-    saveAll(); renderLogs();
-    stopVisitorCamera(); hideVisitorTab(); showTab('live', document.querySelector('.nav button:nth-child(1)'));
-    
-    markDup(vid, Date.now());
-    toast('✅ ' + name + ' — TIME IN at ' + vTimeIn, 'green');
-    var scanMsg = document.getElementById('scanMsg'); scanMsg.innerHTML = '✅ VISITOR LOGGED IN'; scanMsg.style.color = '#16a34a';
-    if(scannerInput) { scannerInput.value = ''; if(currentScanMode === 'USB') scannerInput.focus(); }
+var visitorSaveInProgress = false;
+var _savingVisitor = false; // legacy alias
+function _captureVisitorPhoto(){
+    // Fast, non-blocking-safe capture. Returns existing value if camera not ready.
+    var c = document.getElementById('visitorCanvas');
+    var vc = document.getElementById('visitorCamera');
+    var vp = document.getElementById('visitorPhoto');
+    if(!c || !vp) return '';
+    try {
+        var ready = vc && vc.readyState >= 2 && vc.videoWidth > 0 && !vc.paused;
+        if(!ready) return vp.value || '';
+        c.width = 320; c.height = 240;
+        var ctx = c.getContext('2d');
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.drawImage(vc, 0, 0, c.width, c.height);
+        vp.value = c.toDataURL('image/jpeg', 0.6);
+        return vp.value;
+    } catch(e){ return vp.value || ''; }
 }
+function saveVisitor(){
+    if(visitorSaveInProgress) return;
+    visitorSaveInProgress = true; _savingVisitor = true;
+    var _deferredRelease = false;
+    try {
+        var name = document.getElementById('visitorName').value.trim();
+        var reason=document.getElementById('visitorReason').value.trim(); if(reason==='Others') reason=document.getElementById('visitorReasonOther').value.trim();
+        if(!name || !reason){ toast('❌ Please fill in all visitor information.','red'); return; }
+
+        var vid = pendingVisitorQR || ('VIS-' + Date.now());
+        if(isDupBlocked(vid)){ dupBlockToast(); return; }
+
+        var face = _captureVisitorPhoto();
+
+        var vTimeIn = new Date().toLocaleTimeString();
+        var rec = { id: vid, name: name, category: 'VISITOR', gs: '', reason: reason, timein: vTimeIn, timeout: '', date: new Date().toLocaleDateString(), face: face };
+        logs.push(rec); visitorTempLogs[vid] = rec;
+
+        try {
+            saveAll();
+        } catch(e){
+            logs.pop(); delete visitorTempLogs[vid];
+            toast('❌ Failed to save visitor log: ' + (e && e.message ? e.message : e), 'red');
+            return;
+        }
+
+        // Record is persisted — mark dedup and confirm to the user immediately.
+        markDup(vid, Date.now());
+        toast('✅ ' + name + ' — TIME IN at ' + vTimeIn, 'green');
+
+        document.getElementById('visitorName').value = ''; document.getElementById('visitorReason').value='';document.getElementById('visitorReasonOther').value='';document.getElementById('visitorReasonOther').style.display='none';
+        var vpEl = document.getElementById('visitorPhoto'); if(vpEl) vpEl.value = '';
+        pendingVisitorQR = '';
+
+        // Non-critical UI work deferred so the click never feels frozen.
+        _deferredRelease = true;
+        setTimeout(function(){
+            visitorSaveInProgress = false; _savingVisitor = false;
+            try { stopVisitorCamera(); } catch(e){}
+            try { hideVisitorTab(); showTab('live', document.querySelector('.nav button:nth-child(1)')); } catch(e){}
+            try { renderLogs(); } catch(e){}
+            try {
+                var scanMsg = document.getElementById('scanMsg');
+                if(scanMsg){ scanMsg.innerHTML = '✅ VISITOR LOGGED IN'; scanMsg.style.color = '#16a34a'; }
+                if(scannerInput) { scannerInput.value = ''; if(currentScanMode === 'USB') scannerInput.focus(); }
+            } catch(e){}
+        }, 0);
+        return;
+    } catch(e){
+        toast('❌ Failed to save visitor log: ' + (e && e.message ? e.message : e), 'red');
+    } finally {
+        if(!_deferredRelease){ visitorSaveInProgress = false; _savingVisitor = false; }
+    }
+}
+
 
 var _activeRecognition = null;
 var _recognitionTimeout = null;
